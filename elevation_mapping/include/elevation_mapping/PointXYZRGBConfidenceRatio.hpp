@@ -26,7 +26,7 @@ struct _PointXYZRGBConfidenceRatio {
     };
     float data_c[4];
   };
-  PCL_MAKE_ALIGNED_OPERATOR_NEW
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 } EIGEN_ALIGN16;  // enforce SSE padding for correct memory alignment
 
 struct PointXYZRGBConfidenceRatio : public _PointXYZRGBConfidenceRatio {

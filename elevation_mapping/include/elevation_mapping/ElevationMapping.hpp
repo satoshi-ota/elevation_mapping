@@ -261,6 +261,8 @@ class ElevationMapping {
   ros::ServiceServer saveMapService_;
   ros::ServiceServer loadMapService_;
 
+  ros::Publisher filteredPointCloudPublisher_;
+
   //! Callback thread for the fusion services.
   boost::thread fusionServiceThread_;
 
@@ -282,6 +284,8 @@ class ElevationMapping {
   //! Point which the elevation map follows.
   kindr::Position3D trackPoint_;
   std::string trackPointFrameId_;
+
+  double leafSizeH_, leafSizeV_;
 
   //! ROS topics for subscriptions.
   std::string pointCloudTopic_;  //!< Deprecated, use input_source instead.

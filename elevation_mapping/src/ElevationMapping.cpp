@@ -82,6 +82,8 @@ ElevationMapping::ElevationMapping(ros::NodeHandle& nodeHandle)
     visibilityCleanupTimer_ = nodeHandle_.createTimer(timerOptions);
   }
 
+  filteredPointCloudPublisher_ = nodeHandle_.advertise<sensor_msgs::PointCloud2>("filered_points", 1);
+
   clearMapService_ = nodeHandle_.advertiseService("clear_map", &ElevationMapping::clearMap, this);
   enableUpdatesService_ = nodeHandle_.advertiseService("enable_updates", &ElevationMapping::enableUpdates, this);
   disableUpdatesService_ = nodeHandle_.advertiseService("disable_updates", &ElevationMapping::disableUpdates, this);
@@ -155,6 +157,9 @@ bool ElevationMapping::readParameters() {
   nodeHandle_.param("track_point_x", trackPoint_.x(), 0.0);
   nodeHandle_.param("track_point_y", trackPoint_.y(), 0.0);
   nodeHandle_.param("track_point_z", trackPoint_.z(), 0.0);
+
+  nodeHandle_.param("vgf_leaf_horizontal", leafSizeH_, 0.1);
+  nodeHandle_.param("vgf_leaf_vertical", leafSizeV_, 0.05);
 
   nodeHandle_.param("robot_pose_cache_size", robotPoseCacheSize_, 200);
   ROS_ASSERT(robotPoseCacheSize_ >= 0);
@@ -324,11 +329,29 @@ void ElevationMapping::pointCloudCallback(const sensor_msgs::PointCloud2ConstPtr
 
   // Convert the sensor_msgs/PointCloud2 data to pcl/PointCloud.
   // TODO(max): Double check with http://wiki.ros.org/hydro/Migration
-  pcl::PCLPointCloud2 pcl_pc;
-  pcl_conversions::toPCL(*pointCloudMsg, pcl_pc);
+  pcl::PCLPointCloud2::Ptr pcl_pc(new pcl::PCLPointCloud2 ());
+  pcl_conversions::toPCL(*pointCloudMsg, *pcl_pc);
+
+  // Dowmsampling
+  pcl::PCLPointCloud2::Ptr cloud_filtered (new pcl::PCLPointCloud2 ());
+  std::cerr << "PointCloud before filtering: " << pcl_pc->width * pcl_pc->height
+  << " data points (" << pcl::getFieldsList (*pcl_pc) << ")." << std::endl;
+
+  // Create the filtering object
+  pcl::VoxelGrid<pcl::PCLPointCloud2> sor;
+  sor.setInputCloud(pcl_pc);
+  sor.setLeafSize(leafSizeH_, leafSizeH_, leafSizeV_);
+  sor.filter(*cloud_filtered);
+
+  // Convert to ROS data type
+  sensor_msgs::PointCloud2 filteredPointCloud;
+  pcl_conversions::fromPCL(*cloud_filtered, filteredPointCloud);
+
+  std::cerr << "PointCloud after filtering: " << cloud_filtered->width * cloud_filtered->height
+  << " data points (" << pcl::getFieldsList (*cloud_filtered) << ")." << std::endl;
 
   PointCloudType::Ptr pointCloud(new PointCloudType);
-  pcl::fromPCLPointCloud2(pcl_pc, *pointCloud);
+  pcl::fromPCLPointCloud2(*cloud_filtered, *pointCloud);
   lastPointCloudUpdateTime_.fromNSec(1000 * pointCloud->header.stamp);
 
   ROS_DEBUG("ElevationMap received a point cloud (%i points) for elevation mapping.", static_cast<int>(pointCloud->size()));
@@ -393,6 +416,10 @@ void ElevationMapping::pointCloudCallback(const sensor_msgs::PointCloud2ConstPtr
   }
 
   if (publishPointCloud) {
+
+    if(filteredPointCloudPublisher_.getNumSubscribers() > 0){
+        filteredPointCloudPublisher_.publish(filteredPointCloud);
+    }
     // Publish elevation map.
     map_.publishRawElevationMap();
     if (isContinuouslyFusing_ && map_.hasFusedMapSubscribers()) {
